@@ -301,6 +301,8 @@ function build_impdev() {
   # Clean up things we don't need to reduce image size
   find be -name '*.o' -execdir rm '{}' + # ~1.6GB
 
+  copy_cluster_logs
+
   # Clean up dangling symlinks. These (typically "cluster/cdh*-node-*")
   # may point to something inside a container that no longer exists
   # and can confuse Jenkins.
@@ -327,6 +329,30 @@ function memory_usage() {
       print total, "-- total --"
     }'
   ) >& /logs/memory_usage.txt
+}
+
+# Some components like hdfs, yarn, kudu creates their log in
+# testdata/cluster/cdh<version-number>/node-<node-id>/var/log/ folder
+# these log folders are symlinked to logs/cluster/ folder
+# remove symlinks and copy these logs to logs/cluster/
+function copy_cluster_logs() {
+  echo ">>> Copy cluster logs..."
+  pushd /home/impdev/Impala
+
+  for x in testdata/cluster/cdh*/node-*/var/log/; do
+    echo $x
+    if [ -d $x ]; then
+
+      CDH_VERSION=`echo $x | sed  "s#testdata/cluster/\(.*\)/node-.*#\1#"`
+      NODE_NUMBER=`echo $x | sed  "s#testdata/cluster/cdh.*/\(.*\)/var.*#\1#"`
+
+      rm -rf logs/cluster/${CDH_VERSION}-${NODE_NUMBER}
+      mkdir -p logs/cluster/${CDH_VERSION}-${NODE_NUMBER}
+      cp -R $x/* logs/cluster/${CDH_VERSION}-${NODE_NUMBER}
+    fi
+  done
+
+  popd
 }
 
 # Runs a suite passed in as the first argument. Tightly
@@ -443,6 +469,9 @@ function test_suite() {
   # leading to test-with-docker.py hitting a timeout. Killing the minicluster
   # daemons fixes this.
   testdata/bin/kill-all.sh || true
+
+  copy_cluster_logs
+
   return $ret
 }
 
